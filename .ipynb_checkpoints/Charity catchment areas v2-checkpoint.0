@@ -1,0 +1,504 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a3afb877",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#import packages \n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "import pandas as pd\n",
+    "import os\n",
+    "import geopandas as gpd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "from tobler.util import h3fy #hexgrid creation and data interpolation \n",
+    "from tobler.area_weighted import area_interpolate #spatial interpolation\n",
+    "import contextily as ctx #add base maps\n",
+    "from matplotlib_scalebar.scalebar import ScaleBar "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b0e3a4b8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "lsoa = gpd.read_file('1_raw data\\Lower_layer_Super_Output_Areas_2021_EW_BGC_V3_-3320468682147951291.geojson')\n",
+    "lsoa"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "cb2f2af6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_lsoa = lsoa[lsoa[\"LSOA21NM\"].str.contains(\"Leeds\")]\n",
+    "\n",
+    "leeds_lsoa.plot()\n",
+    "leeds_lsoa.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "1bd704cf",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_bound = leeds_lsoa\n",
+    "leeds_bound['temp'] = 1\n",
+    "leeds_bound = leeds_bound.dissolve(by='temp')\n",
+    "leeds_bound.plot()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "e2baf9a5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bua = gpd.read_file('1_raw data\\BUA_2022_GB_-8042218937152150708.geojson')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "11567547",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_bua = gpd.clip(bua, leeds_bound)\n",
+    "leeds_bua = gpd.clip(leeds_lsoa, leeds_bua)\n",
+    "leeds_bua.plot()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "afc1ca7a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_bua.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "238392d1",
+   "metadata": {},
+   "source": [
+    "### Load age group data "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "dbce38d7",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "age = pd.read_csv(\"1_raw data\\census_2021_NOMIS\\census2021_Age by five-year age bands\\census2021-ts007a-lsoa.csv\")\n",
+    "age['pop_under19'] = age['Age: Aged 4 years and under']+age['Age: Aged 5 to 9 years']+age['Age: Aged 10 to 14 years']+age['Age: Aged 15 to 19 years']\n",
+    "\n",
+    "age = age[['date','geography','geography code','Age: Total','pop_under19']]\n",
+    "age.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a363da30",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "age_merge = age[['geography code','Age: Total','pop_under19']]\n",
+    "\n",
+    "leeds_bua = pd.merge(leeds_bua, age_merge, left_on='LSOA21CD', right_on= 'geography code', how='left')\n",
+    "leeds_bua.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e336e6b5",
+   "metadata": {},
+   "source": [
+    "### Food charities and food type"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b3ea663e",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "charity_all = pd.read_csv('2_processed data\\Dispatch Metrics_Children_all.csv')\n",
+    "charity_all.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "9da751b5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# only include food moved in 2023\n",
+    "charity_all_2023 = charity_all[charity_all.Year == 2024]\n",
+    "charity_all_2023"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0a54e8d4",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#creat a geodataframe for charities\n",
+    "from shapely.geometry import Point\n",
+    "charity_all_2023['Coordinates'] = list(zip(charity_all_2023.long, charity_all_2023.lat))\n",
+    "charity_all_2023['Coordinates'] = charity_all_2023['Coordinates'].apply(Point)\n",
+    "charity_all_2023 = gpd.GeoDataFrame(charity_all_2023, geometry='Coordinates')\n",
+    "charity_all_2023.head()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "6b095db6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "charity_all_2023.plot()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0b1b8b9e",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#generate h3 hexagons using Tobler's h3fy function\n",
+    "leeds_hex = h3fy(leeds_bua, resolution=9, buffer=True, clip=False) #set resolution and Clip=False to ensure all hexagons are within the boundaries of the municipalities\n",
+    "leeds_hex.insert(0, 'id', range(1, 1 + len(leeds_hex)))\n",
+    "\n",
+    "leeds_hex.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8c524a58",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "fig, axs = plt.subplots(1,2, figsize=(50,50), )\n",
+    "axs=axs.flatten()\n",
+    "\n",
+    "leeds_bua.plot(ax=axs[0], alpha=0.6, linewidth=2, edgecolor='white')\n",
+    "leeds_hex.plot(ax=axs[1], alpha=0.6, linewidth=2, edgecolor='white')\n",
+    "\n",
+    "axs[0].set_title('LSOAs Built-Up Areas', fontweight=\"bold\", size=30)\n",
+    "axs[1].set_title('Hex Grid', fontweight=\"bold\", size=30)\n",
+    "\n",
+    "axs[0].axis('off')\n",
+    "axs[1].axis('off')\n",
+    "\n",
+    "axs[0].set_box_aspect(1)\n",
+    "axs[1].set_box_aspect(1)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "56f136b7",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Interpolate total population and under-19 population for h3 hexagons\n",
+    "leeds_hex = area_interpolate(source_df=leeds_bua, target_df=leeds_hex, extensive_variables=['Age: Total', 'pop_under19'])\n",
+    "#add an id column with simple series of ids to the interpolated hexgrid layer\n",
+    "leeds_hex.insert(0, 'id', range(1, 1 + len(leeds_hex)))\n",
+    "leeds_hex.info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "36362317",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "fig, axs = plt.subplots(1,2, figsize=(40,20))\n",
+    "leeds_bua.plot('pop_under19', scheme='quantiles', cmap='viridis', k = 10, legend = True, alpha=0.7, ax=axs[0])\n",
+    "\n",
+    "leeds_hex.plot('pop_under19', scheme='quantiles', cmap='viridis', k = 10, legend = True, alpha=0.7, ax=axs[1])\n",
+    "\n",
+    "axs[0].set_title('Original Data',fontsize=24)\n",
+    "axs[1].set_title('Interpolated Data',fontsize=24)\n",
+    "\n",
+    "for ax in axs:\n",
+    "    ctx.add_basemap(ax=ax, crs=leeds_bua.crs, source=ctx.providers.OpenStreetMap.HOT)\n",
+    "    ax.axis('off')\n",
+    "plt.suptitle('Spatial Interpolation of under-19 population on hexgrid level', fontsize=35)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "909b6602",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#generate centroids for all hexagons\n",
+    "leeds_hex[\"centroid\"] = leeds_hex[\"geometry\"].centroid"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "96ebd9e3",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "points = leeds_hex.drop(['geometry'], axis=1)\n",
+    "points = points.rename(columns={\"centroid\": \"geometry\", \"hex_id\":\"id\"}).to_crs(4326)\n",
+    "points.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e8d76cb1",
+   "metadata": {},
+   "source": [
+    "### Travel time computation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "171783e3",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "charity_all_2023.insert(0, 'id', range(1, 1 + len(charity_all_2023)))\n",
+    "charity_all_2023.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c9245a15",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#create a subset of food charities for travel time calculation\n",
+    "destinations = charity_all_2023[['id','Coordinates']]\n",
+    "destinations.plot()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "ce743314",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import sys\n",
+    "sys.argv.append([\"--max-memory\", \"12G\"]) #override ram limitation for r5py computations\n",
+    "import r5py\n",
+    "from r5py import TransportNetwork"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b187bfca",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#adding OSM road network and GTFS feed to the transport network variable\n",
+    "road_netowrk = '1_raw data\\Leeds._roads.osm.pbf'\n",
+    "transport_network = TransportNetwork(road_netowrk,)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "39724e47",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import datetime\n",
+    "from r5py import TravelTimeMatrixComputer, TransitMode, LegMode\n",
+    "\n",
+    "travel_time_matrix_computer = TravelTimeMatrixComputer(\n",
+    "    transport_network,\n",
+    "    origins = points,\n",
+    "    destinations=destinations,\n",
+    "    departure=datetime.datetime(2024, 5, 16, 8, 30),\n",
+    "    transport_modes=[LegMode.WALK]\n",
+    ")\n",
+    "access_t = travel_time_matrix_computer.compute_travel_times()\n",
+    "\n",
+    "access_t = access_t.dropna() #drop rows with NaN travel time\n",
+    "access_t.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7d170f2b",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#remove all O-D pairs with trips of more than 30 minutes\n",
+    "accessible_destinations= access_t[access_t['travel_time'] <= 30]\n",
+    "accessible_destinations.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b8275753",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "food_quant = charity_all_2023[['id', 'Food Moved KG', 'Food Moved Meal Equivalents']]\n",
+    "food_quant = pd.merge(accessible_destinations, food_quant, left_on='to_id', right_on= 'id', how='left')\n",
+    "food_quant = food_quant[['from_id','Food Moved KG', 'Food Moved Meal Equivalents']]\n",
+    "food_quant = food_quant.groupby('from_id').agg({'Food Moved KG': 'sum', 'Food Moved Meal Equivalents': 'sum'})\n",
+    "food_quant"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "4d224b13",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "food_quant_hex = pd.merge(leeds_hex, food_quant, how='left', left_on =['id'], right_on=['from_id'])\n",
+    "food_quant_hex = food_quant_hex.drop(food_quant_hex[food_quant_hex['pop_under19'] == 0].index)\n",
+    "food_quant_hex = food_quant_hex.fillna(0)\n",
+    "\n",
+    "food_quant_hex['meal_equ_capita_u19'] = food_quant_hex['Food Moved Meal Equivalents'] / food_quant_hex['pop_under19']\n",
+    "food_quant_hex['food_kg_capita_u19'] = food_quant_hex['Food Moved KG'] / food_quant_hex['pop_under19']\n",
+    "\n",
+    "food_quant_hex.info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0b5e3c38",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "fig, ax = plt.subplots(1, figsize=(10,10))\n",
+    "food_quant_hex.to_crs(27700).plot(ax = ax,column = 'food_kg_capita_u19', scheme = 'natural_breaks', cmap = 'viridis', k = 7 ,legend = True, alpha = 0.7)\n",
+    "ctx.add_basemap(ax, crs = 27700 , source=ctx.providers.OpenStreetMap.HOT) \n",
+    "\n",
+    "leg = ax.get_legend()\n",
+    "leg.set_bbox_to_anchor((1.45,0.5))\n",
+    "scale1 = ScaleBar(dx=1,location='lower left') #create a scale bar, with dx set to the number of pixels per unit, and \n",
+    "ax.add_artist(scale1) #plot the scale bar\n",
+    "\n",
+    "\n",
+    "ax.set_axis_off()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c970a5bf",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "food_quant_hex = food_quant_hex.drop(columns=['centroid']).to_crs(27700)\n",
+    "food_quant_hex.to_file('2_processed data\\leeds_food_quant.geojson', driver=\"GeoJSON\") \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c56e4745",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_bua.to_crs(27700).to_file('2_processed data\\leeds_bua.geojson', driver=\"GeoJSON\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c11cbe5c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "leeds_lsoa.to_crs(27700).to_file('2_processed data\\leeds_lsoa.geojson', driver=\"GeoJSON\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "9d8a8747",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "charity_all_2023.set_crs(4326).to_crs(27700).to_file('2_processed data\\leeds_charities_edited.geojson', driver=\"GeoJSON\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8f4bfc78",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b035377d",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
