@@ -1,7 +1,6 @@
-# Accessibility to Redistibuted Surplus Food
 # Surplus Food Redistribution Accessibility Analysis
 
-In this project, we use Potential Cumulative Accessibility (PCA) to analyze access to surplus food redistribution in West Yorkshire.
+In this project, we use Potential Cumulative Accessibility (PCA) to analyze access to surplus food redistribution in West Yorkshire. The following table outlines variables and what they describe.
 
 ## Variables
 
